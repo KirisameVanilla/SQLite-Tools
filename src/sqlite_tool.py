@@ -15,6 +15,9 @@ import shutil
 from datetime import datetime
 from typing import Optional
 
+# 导出工具
+from .export_utils import export_db_to_csv, export_db_to_xlsx
+
 
 class SQLiteTool:
     def __init__(self, root):
@@ -68,6 +71,14 @@ class SQLiteTool:
             side=tk.LEFT, padx=(0, 5)
         )
         ttk.Button(toolbar, text="导出数据库", command=self.export_database).pack(
+            side=tk.LEFT, padx=(0, 5)
+        )
+
+        # 新增：导出为CSV和XLSX
+        ttk.Button(toolbar, text="导出为CSV", command=self.export_csv).pack(
+            side=tk.LEFT, padx=(0, 5)
+        )
+        ttk.Button(toolbar, text="导出为XLSX", command=self.export_xlsx).pack(
             side=tk.LEFT, padx=(0, 5)
         )
 
@@ -136,6 +147,45 @@ class SQLiteTool:
         )
         h_scrollbar.pack(fill=tk.X)
         self.data_tree.configure(xscrollcommand=h_scrollbar.set)
+
+    def export_csv(self):
+        if not self.conn or not self.current_db_path:
+            messagebox.showwarning("警告", "请先打开一个数据库")
+            return
+        db_path = self.current_db_path
+        db_name = os.path.splitext(os.path.basename(db_path))[0]
+        output_dir = filedialog.askdirectory(title="选择导出CSV的文件夹")
+        if not output_dir:
+            return
+        try:
+            export_db_to_csv(db_path, os.path.join(output_dir, db_name))
+            self.update_status(f"已导出为CSV: {os.path.join(output_dir, db_name)}")
+            messagebox.showinfo(
+                "成功", f"已导出为CSV: {os.path.join(output_dir, db_name)}"
+            )
+        except Exception as e:
+            messagebox.showerror("错误", f"导出CSV失败: {str(e)}")
+
+    def export_xlsx(self):
+        if not self.conn or not self.current_db_path:
+            messagebox.showwarning("警告", "请先打开一个数据库")
+            return
+        db_path = self.current_db_path
+        db_name = os.path.splitext(os.path.basename(db_path))[0]
+        output_path = filedialog.asksaveasfilename(
+            title="导出为XLSX",
+            defaultextension=".xlsx",
+            filetypes=[("Excel文件", "*.xlsx"), ("所有文件", "*.*")],
+            initialfile=f"{db_name}.xlsx",
+        )
+        if not output_path:
+            return
+        try:
+            export_db_to_xlsx(db_path, output_path)
+            self.update_status(f"已导出为XLSX: {output_path}")
+            messagebox.showinfo("成功", f"已导出为XLSX: {output_path}")
+        except Exception as e:
+            messagebox.showerror("错误", f"导出XLSX失败: {str(e)}")
 
     def create_query_tab(self, notebook):
         # 数据查询标签页
