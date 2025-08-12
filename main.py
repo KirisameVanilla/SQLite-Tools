@@ -1,4 +1,4 @@
-from src.sqlite_tool import SQLiteTool
+from src import SQLiteTool
 import tkinter as tk
 
 
