@@ -9,13 +9,10 @@ SQLite3 桌面工具
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import sqlite3
 import os
-import shutil
+import sqlite3
 from datetime import datetime
-from typing import Optional
-
-# 导出工具
+from .sqlite_utils import SQLiteUtils
 from .export_utils import export_db_to_csv, export_db_to_xlsx
 
 
@@ -25,19 +22,21 @@ class SQLiteTool:
         self.root.title("SQLite3 工具")
         self.root.geometry("1000x700")
 
-        # 当前数据库连接
-        self.conn: Optional[sqlite3.Connection] = None
-        self.current_db_path: Optional[str] = None
+        # 逻辑层
+        self.logic = SQLiteUtils()
 
         # 创建界面
         self.setup_ui()
 
     def setup_ui(self):
+        # 菜单栏
+        self.create_menu()
+
         # 主框架
         main_frame = ttk.Frame(self.root)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # 顶部工具栏
+        # 顶部工具栏（只显示数据库信息）
         self.create_toolbar(main_frame)
 
         # 创建笔记本控件（标签页）
@@ -59,35 +58,22 @@ class SQLiteTool:
     def create_toolbar(self, parent):
         toolbar = ttk.Frame(parent)
         toolbar.pack(fill=tk.X, pady=(0, 10))
-
-        # 数据库操作按钮
-        ttk.Button(toolbar, text="新建数据库", command=self.create_database).pack(
-            side=tk.LEFT, padx=(0, 5)
-        )
-        ttk.Button(toolbar, text="打开数据库", command=self.open_database).pack(
-            side=tk.LEFT, padx=(0, 5)
-        )
-        ttk.Button(toolbar, text="导入数据库", command=self.import_database).pack(
-            side=tk.LEFT, padx=(0, 5)
-        )
-        ttk.Button(toolbar, text="导出数据库", command=self.export_database).pack(
-            side=tk.LEFT, padx=(0, 5)
-        )
-
-        # 新增：导出为CSV和XLSX
-        ttk.Button(toolbar, text="导出为CSV", command=self.export_csv).pack(
-            side=tk.LEFT, padx=(0, 5)
-        )
-        ttk.Button(toolbar, text="导出为XLSX", command=self.export_xlsx).pack(
-            side=tk.LEFT, padx=(0, 5)
-        )
-
-        # 分隔符
-        ttk.Separator(toolbar, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=10)
-
-        # 当前数据库信息
+        # 只显示当前数据库信息
         self.db_info_label = ttk.Label(toolbar, text="未连接数据库")
         self.db_info_label.pack(side=tk.LEFT, padx=(0, 10))
+
+    def create_menu(self):
+        menubar = tk.Menu(self.root)
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="新建数据库", command=self.create_database)
+        file_menu.add_command(label="打开数据库", command=self.open_database)
+        file_menu.add_command(label="导入数据库", command=self.import_database)
+        file_menu.add_command(label="导出数据库", command=self.export_database)
+        file_menu.add_separator()
+        file_menu.add_command(label="导出为CSV", command=self.export_csv)
+        file_menu.add_command(label="导出为XLSX", command=self.export_xlsx)
+        menubar.add_cascade(label="文件", menu=file_menu)
+        self.root.config(menu=menubar)
 
     def create_structure_tab(self, notebook):
         # 数据库结构标签页
@@ -149,10 +135,12 @@ class SQLiteTool:
         self.data_tree.configure(xscrollcommand=h_scrollbar.set)
 
     def export_csv(self):
-        if not self.conn or not self.current_db_path:
+        if not self.logic.current_db_path:
             messagebox.showwarning("警告", "请先打开一个数据库")
             return
-        db_path = self.current_db_path
+        db_path = self.logic.current_db_path
+        import os
+
         db_name = os.path.splitext(os.path.basename(db_path))[0]
         output_dir = filedialog.askdirectory(title="选择导出CSV的文件夹")
         if not output_dir:
@@ -167,10 +155,12 @@ class SQLiteTool:
             messagebox.showerror("错误", f"导出CSV失败: {str(e)}")
 
     def export_xlsx(self):
-        if not self.conn or not self.current_db_path:
+        if not self.logic.current_db_path:
             messagebox.showwarning("警告", "请先打开一个数据库")
             return
-        db_path = self.current_db_path
+        db_path = self.logic.current_db_path
+        import os
+
         db_name = os.path.splitext(os.path.basename(db_path))[0]
         output_path = filedialog.asksaveasfilename(
             title="导出为XLSX",
@@ -317,10 +307,11 @@ class SQLiteTool:
         )
         if file_path:
             try:
-                # 创建新的数据库文件
-                conn = sqlite3.connect(file_path)
-                conn.close()
-                self.open_database_file(file_path)
+                self.logic.create_database(file_path)
+                self.db_info_label.config(
+                    text=f"当前数据库: {os.path.basename(file_path)}"
+                )
+                self.refresh_database_structure()
                 self.update_status(f"已创建数据库: {os.path.basename(file_path)}")
             except Exception as e:
                 messagebox.showerror("错误", f"创建数据库失败: {str(e)}")
@@ -335,7 +326,15 @@ class SQLiteTool:
             ],
         )
         if file_path:
-            self.open_database_file(file_path)
+            try:
+                self.logic.open_database_file(file_path)
+                self.db_info_label.config(
+                    text=f"当前数据库: {os.path.basename(file_path)}"
+                )
+                self.refresh_database_structure()
+                self.update_status(f"已打开数据库: {os.path.basename(file_path)}")
+            except Exception as e:
+                messagebox.showerror("错误", f"打开数据库失败: {str(e)}")
 
     def open_database_file(self, file_path):
         try:
@@ -373,17 +372,19 @@ class SQLiteTool:
             )
             if target_file:
                 try:
-                    shutil.copy2(source_file, target_file)
-                    self.open_database_file(target_file)
+                    self.logic.import_database(source_file, target_file)
+                    self.db_info_label.config(
+                        text=f"当前数据库: {os.path.basename(target_file)}"
+                    )
+                    self.refresh_database_structure()
                     self.update_status(f"已导入数据库: {os.path.basename(target_file)}")
                 except Exception as e:
                     messagebox.showerror("错误", f"导入数据库失败: {str(e)}")
 
     def export_database(self):
-        if not self.conn or not self.current_db_path:
+        if not self.logic.current_db_path:
             messagebox.showwarning("警告", "请先打开一个数据库")
             return
-
         target_file = filedialog.asksaveasfilename(
             title="导出数据库到",
             defaultextension=".db",
@@ -395,34 +396,19 @@ class SQLiteTool:
         )
         if target_file:
             try:
-                shutil.copy2(self.current_db_path, target_file)
+                self.logic.export_database(target_file)
                 self.update_status(f"已导出数据库: {os.path.basename(target_file)}")
             except Exception as e:
                 messagebox.showerror("错误", f"导出数据库失败: {str(e)}")
 
     def refresh_database_structure(self):
-        if not self.conn:
-            return
-
         try:
-            # 获取所有表名
-            cursor = self.conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-            tables = cursor.fetchall()
-
-            # 更新表列表
+            tables = self.logic.get_tables()
             self.tables_listbox.delete(0, tk.END)
-            table_names = []
-            for table in tables:
-                table_name = table[0]
+            for table_name in tables:
                 self.tables_listbox.insert(tk.END, table_name)
-                table_names.append(table_name)
-
-            # 更新查询标签页的表选择下拉框
-            self.query_table_combo["values"] = table_names
-
+            self.query_table_combo["values"] = tables
             self.update_status(f"已加载 {len(tables)} 个表")
-
         except Exception as e:
             messagebox.showerror("错误", f"刷新数据库结构失败: {str(e)}")
 
@@ -434,61 +420,37 @@ class SQLiteTool:
             self.show_table_data(table_name)
 
     def show_table_structure(self, table_name):
-        if not self.conn:
-            return
-
         try:
-            # 清空结构树
             for item in self.structure_tree.get_children():
                 self.structure_tree.delete(item)
-
-            # 获取表结构
-            cursor = self.conn.cursor()
-            cursor.execute(f"PRAGMA table_info({table_name})")
-            columns = cursor.fetchall()
-
+            columns = self.logic.get_table_structure(table_name)
             for col in columns:
-                cid, name, data_type, not_null, default_value, pk = col
-                is_null = "否" if not_null else "是"
-                is_pk = "是" if pk else "否"
-                default_val = default_value if default_value is not None else ""
-
-                self.structure_tree.insert(
-                    "", tk.END, values=(name, data_type, is_null, default_val, is_pk)
+                is_null = "否" if col["not_null"] else "是"
+                is_pk = "是" if col["pk"] else "否"
+                default_val = (
+                    col["default_value"] if col["default_value"] is not None else ""
                 )
-
+                self.structure_tree.insert(
+                    "",
+                    tk.END,
+                    values=(col["name"], col["data_type"], is_null, default_val, is_pk),
+                )
         except Exception as e:
             messagebox.showerror("错误", f"显示表结构失败: {str(e)}")
 
     def show_table_data(self, table_name, limit=100):
-        if not self.conn:
-            return
-
         try:
-            # 清空数据树
             for item in self.data_tree.get_children():
                 self.data_tree.delete(item)
-
-            # 获取表数据
-            cursor = self.conn.cursor()
-            cursor.execute(f"SELECT * FROM {table_name} LIMIT {limit}")
-            rows = cursor.fetchall()
-
-            # 获取列名
-            column_names = [description[0] for description in cursor.description]
-
-            # 设置列
+            data = self.logic.get_table_data(table_name, limit)
+            column_names = data["columns"]
             self.data_tree["columns"] = column_names
             self.data_tree["show"] = "headings"
-
             for col in column_names:
                 self.data_tree.heading(col, text=col)
                 self.data_tree.column(col, width=100)
-
-            # 插入数据
-            for row in rows:
+            for row in data["rows"]:
                 self.data_tree.insert("", tk.END, values=row)
-
         except Exception as e:
             messagebox.showerror("错误", f"显示表数据失败: {str(e)}")
 
@@ -496,42 +458,23 @@ class SQLiteTool:
         pass  # 可以在这里添加表变化时的逻辑
 
     def execute_query(self):
-        if not self.conn:
-            messagebox.showwarning("警告", "请先打开一个数据库")
-            return
-
         table_name = self.query_table_var.get()
         if not table_name:
             messagebox.showwarning("警告", "请选择一个表")
             return
-
         try:
-            # 清空结果树
             for item in self.result_tree.get_children():
                 self.result_tree.delete(item)
-
-            # 执行查询
-            cursor = self.conn.cursor()
-            cursor.execute(f"SELECT * FROM {table_name}")
-            rows = cursor.fetchall()
-
-            # 获取列名
-            column_names = [description[0] for description in cursor.description]
-
-            # 设置列
+            data = self.logic.execute_query(table_name)
+            column_names = data["columns"]
             self.result_tree["columns"] = column_names
             self.result_tree["show"] = "headings"
-
             for col in column_names:
                 self.result_tree.heading(col, text=col)
                 self.result_tree.column(col, width=100)
-
-            # 插入数据
-            for row in rows:
+            for row in data["rows"]:
                 self.result_tree.insert("", tk.END, values=row)
-
-            self.update_status(f"查询完成，返回 {len(rows)} 条记录")
-
+            self.update_status(f"查询完成，返回 {len(data['rows'])} 条记录")
         except Exception as e:
             messagebox.showerror("错误", f"查询失败: {str(e)}")
 
@@ -735,49 +678,28 @@ class SQLiteTool:
         )
 
     def execute_sql(self):
-        if not self.conn:
-            messagebox.showwarning("警告", "请先打开一个数据库")
-            return
-
         sql = self.sql_text.get(1.0, tk.END).strip()
         if not sql:
             messagebox.showwarning("警告", "请输入SQL语句")
             return
-
         try:
-            # 清空结果树
             for item in self.sql_result_tree.get_children():
                 self.sql_result_tree.delete(item)
-
-            cursor = self.conn.cursor()
-            cursor.execute(sql)
-
-            if cursor.description:  # SELECT查询
-                # 获取列名
-                column_names = [description[0] for description in cursor.description]
-                rows = cursor.fetchall()
-
-                # 设置列
+            result = self.logic.execute_sql(sql)
+            if "columns" in result:
+                column_names = result["columns"]
                 self.sql_result_tree["columns"] = column_names
                 self.sql_result_tree["show"] = "headings"
-
                 for col in column_names:
                     self.sql_result_tree.heading(col, text=col)
                     self.sql_result_tree.column(col, width=100)
-
-                # 插入数据
-                for row in rows:
+                for row in result["rows"]:
                     self.sql_result_tree.insert("", tk.END, values=row)
-
-                self.update_status(f"查询完成，返回 {len(rows)} 条记录")
-
-            else:  # INSERT, UPDATE, DELETE等
-                self.conn.commit()
-                affected_rows = cursor.rowcount
-                self.update_status(f"SQL执行成功，影响 {affected_rows} 行")
-
-                # 刷新数据库结构（可能创建了新表）
+                self.update_status(f"查询完成，返回 {len(result['rows'])} 条记录")
+            else:
+                self.update_status(
+                    f"SQL执行成功，影响 {result.get('affected_rows', 0)} 行"
+                )
                 self.refresh_database_structure()
-
         except Exception as e:
             messagebox.showerror("错误", f"SQL执行失败: {str(e)}")
